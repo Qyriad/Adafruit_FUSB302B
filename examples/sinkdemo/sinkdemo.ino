@@ -10,7 +10,7 @@ void setup() {
   Serial.begin(115200);
 
   Adafruit_FUSB302B usbc;
-  usbc.begin();
+  usbc.begin(POWER_SOURCE);
 
   auto devId = usbc.getDeviceId();
 

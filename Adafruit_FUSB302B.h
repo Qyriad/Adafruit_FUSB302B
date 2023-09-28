@@ -16,6 +16,22 @@ enum FUSB302B_VersionId {
   FUSB302B_C = 0b1010,
 };
 
+enum FUSB302B_PowerRole {
+  POWER_SINK,
+  POWER_SOURCE,
+  POWER_DUAL,
+};
+
+enum FUSB302B_DataRole {
+  /** @brief The "Device" role, typically used by peripherals. */
+  DATA_UPSTREAM_FACING,
+
+  /** @brief The "Host" role, typically used by computers. */
+  DATA_DOWNSTREAM_FACING,
+
+  DATA_DUAL,
+};
+
 class FUSB302B_DeviceId {
 
 public:
@@ -64,7 +80,7 @@ public:
 
 class Adafruit_FUSB302B {
 public:
-  bool begin();
+  bool begin(FUSB302B_PowerRole powerMode);
 
   FUSB302B_DeviceId getDeviceId();
 
