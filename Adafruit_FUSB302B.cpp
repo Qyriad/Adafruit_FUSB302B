@@ -1,5 +1,6 @@
 #include <assert.h>
 
+#include "Adafruit_BusIO_Register.h"
 #include "Adafruit_FUSB302B.h"
 
 #define REG_DEVICE_ID (0x01)
@@ -8,6 +9,22 @@
 #define REG_SWITCHES0 (0x02)
 
 #define REG_SWITCHES1 (0x03)
+
+#define REG_MEASURE   (0x04)
+
+#define REG_CONTROL0  (0x06)
+
+// No current
+#define CONTROL0_HOST_CURRENT_NONE (0x00)
+/// 80 uA (microamperes) — the default USB power.
+#define CONTROL0_HOST_CURRENT_80uA (0x01)
+
+#define REG_CONTROL1  (0x07)
+
+#define REG_POWER     (0x0b)
+
+#define REG_STATUS0   (0x40)
+#define REG_STATUS1   (0x41)
 
 // This register is 8 bits wide.
 #define REG_FIFO      (0x43)
@@ -26,6 +43,10 @@
 #define TOKEN_TXOFF   (0xFE)
 
 const uint8_t DEVICE_ADDR = 0x22;
+
+inline bool matchesMask(uint8_t byte, uint8_t mask) {
+  return (byte & mask) == mask;
+}
 
 FUSB302B_DeviceId::FUSB302B_DeviceId() {
   deviceId = 0;
@@ -150,9 +171,127 @@ bool Adafruit_FUSB302B::begin(FUSB302B_PowerRole powerMode) {
 
   if (powerMode == POWER_SOURCE) {
     // Disable device pull-down resistors (Rd) on CC1 and CC2, and
-    // apply host pull-up currents (Ip) to CC1 and CC2.
+    // apply host pull-up currents (Ip) to CC1 and CC2 (equivalent to Rp).
     // USB Type-C R2.2 § 4.5.1.2.1
 
+    Adafruit_BusIO_Register switches0(_i2cDev, REG_SWITCHES0);
+
+    Adafruit_BusIO_RegisterBits cc1Rd(&switches0, 1, 0);
+    Adafruit_BusIO_RegisterBits cc2Rd(&switches0, 1, 1);
+    Adafruit_BusIO_RegisterBits cc1Measure(&switches0, 1, 4);
+    Adafruit_BusIO_RegisterBits cc2Measure(&switches0, 1, 5);
+    Adafruit_BusIO_RegisterBits cc1Ip(&switches0, 1, 6);
+    Adafruit_BusIO_RegisterBits cc2Ip(&switches0, 1, 7);
+
+    // 0: no pull down resistor.
+    cc1Rd.write(0);
+    cc2Rd.write(0);
+
+    // 1: Apply pull-up current.
+    cc1Ip.write(1);
+    cc2Ip.write(1);
+
+    // Enable measuring the voltage on the CC lines.
+    cc1Measure.write(1);
+    cc2Measure.write(1);
+
+    Adafruit_BusIO_Register measure(_i2cDev, REG_MEASURE);
+    Adafruit_BusIO_RegisterBits measureDac(&measure, 5, 0);
+
+    Adafruit_BusIO_Register control0(_i2cDev, REG_CONTROL0);
+
+    // HOST_Cur[1:0] (size = 2) is at bits 3:2 (so shift = 2).
+    Adafruit_BusIO_RegisterBits host_current(&control0, 2, 2);
+    host_current.write(CONTROL0_HOST_CURRENT_80uA);
+
+    // Now tell the FUSB302B to enable SOP' packets.
+    Adafruit_BusIO_Register control1(_i2cDev, REG_CONTROL1);
+    Adafruit_BusIO_RegisterBits enable_sop_prime(&control1, 1, 0);
+    enable_sop_prime.write(1);
+
+    // Tell the FUSB302B to set the "Source" bit when replying with a GoodCRC.
+    Adafruit_BusIO_Register switches1(_i2cDev, REG_SWITCHES1);
+    Adafruit_BusIO_RegisterBits powerRole(&switches1, 1, 7);
+    Adafruit_BusIO_RegisterBits autoCrc(&switches1, 1, 2);
+
+    powerRole.write(1);
+    autoCrc.write(1);
+
+    // Setup for reading general status information.
+    Adafruit_BusIO_Register status0(_i2cDev, REG_STATUS0);
+    Adafruit_BusIO_RegisterBits status0All(&status0, 8, 0);
+
+    Adafruit_BusIO_Register power(_i2cDev, REG_POWER);
+    Adafruit_BusIO_RegisterBits powerMeasureBlock(&power, 1, 2);
+    powerMeasureBlock.write(1);
+
+    Adafruit_BusIO_Register status1(_i2cDev, REG_STATUS1);
+    Adafruit_BusIO_RegisterBits rxEmpty(&status1, 1, 5);
+
+    Adafruit_BusIO_Register fifo(_i2cDev, REG_FIFO);
+
+    Serial.println("Entering read loop");
+
+    while (true) {
+
+      if (rxEmpty.read() != 1) {
+        Serial.println("");
+        uint8_t byte = 0;
+        fifo.read(&byte);
+
+        switch (byte) {
+          case TOKEN_TXON:
+            Serial.println("TXON");
+            break;
+          case TOKEN_SOP1:
+            Serial.println("SOP1");
+            break;
+          case TOKEN_SOP2:
+            Serial.println("SOP2");
+            break;
+          case TOKEN_SOP3:
+            Serial.println("SOP3");
+            break;
+          case TOKEN_RESET1:
+            Serial.println("RESET1");
+            break;
+          case TOKEN_RESET2:
+            Serial.println("RESET2");
+            break;
+          case TOKEN_PACKSYM:
+            Serial.println("PACKSYM");
+            break;
+          case TOKEN_JAM_CRC:
+            Serial.println("JAM_CRC");
+            break;
+          case TOKEN_EOP:
+            Serial.println("EOP");
+            break;
+          case TOKEN_TXOFF:
+            Serial.println("TXOFF");
+            break;
+          default:
+            Serial.print("Unknown token: 0x");
+            Serial.println(byte, HEX);
+
+            //if ((byte & 0b11100000) == 0b11100000) {
+            if (matchesMask(byte, 0b11100000)) {
+              Serial.println("SOP");
+            }
+            break;
+        }
+      } else {
+        uint8_t measureResults = measureDac.read();
+        Serial.print("Measured: 0x");
+        Serial.print(measureResults, HEX);
+        Serial.print("\t0x");
+        Serial.print(status0All.read(), HEX);
+        Serial.println("");
+      }
+
+      // Wait 10 milliseconds between loops.
+      delay(10);
+    }
 
   } else if (powerMode == POWER_SINK) {
     // Enable device pull-down resistors (Rd) on CC1 and CC2,

@@ -10,6 +10,8 @@
 #include <Adafruit_I2CDevice.h>
 #include <Adafruit_BusIO_Register.h>
 
+#include <stdint.h>
+
 enum FUSB302B_VersionId {
   FUSB302B_A = 0b1000,
   FUSB302B_B = 0b1001,
