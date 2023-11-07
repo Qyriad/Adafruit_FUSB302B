@@ -92,4 +92,65 @@ private:
 
   FUSB302B_DeviceId _deviceId;
 
+  Adafruit_BusIO_Register _reg_switches0;
+  /** @brief `PDWN1` of `SWITCHES0` register, for the device pull-down on CC1. Bit 0. */
+  Adafruit_BusIO_RegisterBits _switches0_pdwn1;
+  /** @brief `PDWN2` of `SWITCHES0` register, for the device pull-down on CC2. Bit 1. */
+  Adafruit_BusIO_RegisterBits _switches0_pdwn2;
+  /** @brief `MEAS_CC1` of `SWITCHES0` register, for enabling the CC1 measure block. Bit 2. */
+  Adafruit_BusIO_RegisterBits _switches0_meascc1;
+  /** @brief `MEAS_CC2` of `SWITCHES0` register, for enabling the CC2 measure block. Bit 3. */
+  Adafruit_BusIO_RegisterBits _switches0_meascc2;
+
+  Adafruit_BusIO_Register _reg_switches1;
+  Adafruit_BusIO_Register _reg_measure;
+  Adafruit_BusIO_Register _reg_slice;
+
+  Adafruit_BusIO_Register _reg_control0;
+  /** @brief `TX_START` of `CONTROL0` register, for starting the TX FIFO. Bit 0. */
+  Adafruit_BusIO_RegisterBits _control0_tx_start;
+
+  /** @brief `AUTO_PRE` of `CONTROL0` register, for auto-starting TX when a good CRC is received. Bit 1. */
+  Adafruit_BusIO_RegisterBits _control0_auto_pre;
+
+  /** @brief `HOST_CUR` of `CONTROL0` register, for controlling the host pull-up current value. Bits 3:2.
+   *
+   * 00: No current
+   *
+   * 01: 80 uA for default USB power
+   *
+   * 10: 180 uA for 1.5 A
+   *
+   * 11: 330 uA for 3 A
+   */
+  Adafruit_BusIO_RegisterBits _control0_host_cur;
+
+  /** @brief `INT_MASK` of `CONTROL0` register, for controlling if interrupts are enabled. Bit 5.
+   *
+   * Enabled by default, meanining that interrupts are masked by default.
+   */
+  Adafruit_BusIO_RegisterBits _control0_int_mask;
+
+  /** @brief `TX_FLUSH` of `CONTROL0` register. Write to flush the TX FIFO content. Bit 6. */
+  Adafruit_BusIO_RegisterBits _control0_tx_flush;
+
+  Adafruit_BusIO_Register _reg_control1;
+  Adafruit_BusIO_Register _reg_control2;
+  Adafruit_BusIO_Register _reg_control3;
+  Adafruit_BusIO_Register _reg_mask;
+
+  Adafruit_BusIO_Register _reg_power;
+  /** @brief `PWR[0]` of the `POWER` register, for the bandgap and wake circuit. Bit 0. */
+  Adafruit_BusIO_RegisterBits _power_bandgap_wake;
+  /** @brief `PWR[1]` of the `POWER` register, for the receiver and current references. Bit 1. */
+  Adafruit_BusIO_RegisterBits _power_receiver_curref;
+  /** @brief `PWR[2]` of the `POWER` register, for the measure block. Bit 2. */
+  Adafruit_BusIO_RegisterBits _power_measure_block;
+  /** @brief `PWR[3]` of the `POWER` register, for the internal oscillator. Bit 3. */
+  Adafruit_BusIO_RegisterBits _power_internal_osc;
+
+  Adafruit_BusIO_Register _reg_reset;
+
+  /** @brief The `SW_RES` field of the `RESET` register. Resets the FUSB302B including I2C registers. Bit 0. */
+  Adafruit_BusIO_RegisterBits _reset_sw;
 };
