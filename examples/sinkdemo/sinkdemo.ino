@@ -9,13 +9,15 @@ void setup() {
   }
   Serial.begin(115200);
 
+  //Adafruit_FUSB302B usbc(POWER_SOURCE);
   Adafruit_FUSB302B usbc;
-  usbc.begin(POWER_SOURCE);
+  //usbc.begin(POWER_SOURCE);
+  usbc.beginSource(5);
 
-  auto devId = usbc.getDeviceId();
-
-  Serial.print("Got device ID: 0x");
-  Serial.println(devId.deviceId, HEX);
+  //auto devId = usbc.getDeviceId();
+  //
+  //Serial.print("Got device ID: 0x");
+  //Serial.println(devId.deviceId, HEX);
 }
 
 void loop() {

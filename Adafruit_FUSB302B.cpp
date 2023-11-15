@@ -132,15 +132,18 @@ union PD_MessageHeader {
 
 static_assert(sizeof(PD_MessageHeader) == 2, "PD_MessageHeader is wrong size (miscompilation?)");
 
-bool Adafruit_FUSB302B::begin(FUSB302B_PowerRole powerMode) {
-  _i2c = &Wire;
+//bool Adafruit_FUSB302B::begin(FUSB302B_PowerRole powerMode) {
+//Adafruit_FUSB302B::Adafruit_FUSB302B(FUSB302B_PowerRole powerMode) {
+Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
+  _i2c = wire;
   _i2cDev = new Adafruit_I2CDevice(
     DEVICE_ADDR, // addr
     _i2c
   );
 
   if (!_i2cDev->begin()) {
-    return false;
+    //return false;
+    while (true) { }
   }
 
 
@@ -148,7 +151,8 @@ bool Adafruit_FUSB302B::begin(FUSB302B_PowerRole powerMode) {
   // The FUSB302B has a bunch of valid device IDs that could be returned here.
   // To check if this one is valid, we'll check that it's not 0xFF or 0x00.
   if (_deviceId.deviceId == 0 || _deviceId.deviceId == 0xFF) {
-    return false;
+    //return false;
+    while (true) { }
   }
 
   Serial.println("FUSB302B: resetting..."); // Qyriad
@@ -165,7 +169,8 @@ bool Adafruit_FUSB302B::begin(FUSB302B_PowerRole powerMode) {
     Serial.print(_deviceId.deviceId, HEX);
     Serial.print("After: 0x");
     Serial.println(newDeviceId.deviceId, HEX);
-    return false;
+    //return false;
+    while (true) { }
   }
 
   Serial.println("Reset complete"); // Qyriad
@@ -174,44 +179,68 @@ bool Adafruit_FUSB302B::begin(FUSB302B_PowerRole powerMode) {
   // POWER SOURCE MODE XXX(Qyriad)
 
   // Setup registers.
-  _reg_switches0 = Adafruit_BusIO_Register(_i2cDev, REG_SWITCHES0);
-  _switches0_pdwn1 = Adafruit_BusIO_RegisterBits(&_reg_switches0, 1, 0);
-  _switches0_pdwn1 = Adafruit_BusIO_RegisterBits(&_reg_switches0, 1, 1);
-  _switches0_pdwn2 = Adafruit_BusIO_RegisterBits(&_reg_switches0, 1, 2);
-  _switches0_meascc1 = Adafruit_BusIO_RegisterBits(&_reg_switches0, 1, 3);
-  _switches0_meascc2 = Adafruit_BusIO_RegisterBits(&_reg_switches0, 1, 4);
+  _reg_switches0     = new Adafruit_BusIO_Register(_i2cDev, REG_SWITCHES0);
+  _switches0_pdwn1   = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 0);
+  _switches0_pdwn2   = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 1);
+  _switches0_meascc1 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 2);
+  _switches0_meascc2 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 3);
+  _switches0_puen1 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 6);
+  _switches0_puen2 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 7);
 
-  _reg_switches1 = Adafruit_BusIO_Register(_i2cDev, REG_SWITCHES1);
-  _reg_measure = Adafruit_BusIO_Register(_i2cDev, REG_MEASURE);
+  //_reg_switches1 = Adafruit_BusIO_Register(_i2cDev, REG_SWITCHES1);
+  //_reg_measure = Adafruit_BusIO_Register(_i2cDev, REG_MEASURE);
   //_reg_slice = Adafruit_BusIO_Register(_i2cDev, REG_SLICE);
 
-  _reg_control0 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL0);
-  _control0_tx_start = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 0);
-  _control0_auto_pre = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 1);
-  _control0_host_cur = Adafruit_BusIO_RegisterBits(&_reg_control0, 2, 2);
-  _control0_int_mask = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 5);
-  _control0_tx_flush = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 6);
+  //_reg_control0 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL0);
+  //_control0_tx_start = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 0);
+  //_control0_auto_pre = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 1);
+  //_control0_host_cur = Adafruit_BusIO_RegisterBits(&_reg_control0, 2, 2);
+  //_control0_int_mask = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 5);
+  //_control0_tx_flush = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 6);
 
-  _reg_control1 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL1);
-  _reg_control2 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL2);
-  _reg_control3 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL3);
+  //_reg_control1 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL1);
+  //
+  //_reg_control2 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL2);
+  //_control2_toggle = Adafruit_BusIO_RegisterBits(&_reg_control2, 1, 0);
+  //_control2_mode = Adafruit_BusIO_RegisterBits(&_reg_control2, 1, 2);
+  //_control2_wake_enable = Adafruit_BusIO_RegisterBits(&_reg_control2, 1, 3);
+  //_control2_toggle_rd_only = Adafruit_BusIO_RegisterBits(&_reg_control2, 1, 5);
+
+  //_reg_control3 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL3);
   //_reg_mask = Adafruit_BusIO_Register(_i2cDev, REG_MASK);
-  _reg_power = Adafruit_BusIO_Register(_i2cDev, REG_POWER);
-  _power_bandgap_wake = Adafruit_BusIO_RegisterBits(&_reg_power, 1, 0);
-  _power_receiver_curref = Adafruit_BusIO_RegisterBits(&_reg_power, 1, 1);
-  _power_measure_block = Adafruit_BusIO_RegisterBits(&_reg_power, 1, 2);
-  _power_internal_osc = Adafruit_BusIO_RegisterBits(&_reg_power, 1, 3);
 
-  _reg_reset = Adafruit_BusIO_Register(_i2cDev, REG_RESET);
+  _reg_measure = new Adafruit_BusIO_Register(_i2cDev, REG_MEASURE);
+  _measure_mdac = new Adafruit_BusIO_RegisterBits(_reg_measure, 6, 0);
+  _measure_meas_vbus = new Adafruit_BusIO_RegisterBits(_reg_measure, 1, 6);
+  //_measure_reserved = new Adafruit_BusIO_RegisterBits(_reg_measure, 1, 7);
 
-  _reset_sw = Adafruit_BusIO_RegisterBits(&_reg_reset, 1, 0);
+  _reg_control2 = new Adafruit_BusIO_Register(_i2cDev, REG_CONTROL2);
+  _control2_toggle = new Adafruit_BusIO_RegisterBits(_reg_control2, 1, 0);
+  _control2_mode = new Adafruit_BusIO_RegisterBits(_reg_control2, 2, 2); // TODO: shift by 2 right?
+
+  _reg_power = new Adafruit_BusIO_Register(_i2cDev, REG_POWER);
+  _power_bandgap_wake = new Adafruit_BusIO_RegisterBits(_reg_power, 1, 0);
+  _power_receiver_curref = new Adafruit_BusIO_RegisterBits(_reg_power, 1, 1);
+  _power_measure_block = new Adafruit_BusIO_RegisterBits(_reg_power, 1, 2);
+  _power_internal_osc = new Adafruit_BusIO_RegisterBits(_reg_power, 1, 3);
+
+  _reg_reset = new Adafruit_BusIO_Register(_i2cDev, REG_RESET);
+
+  _reset_sw = new Adafruit_BusIO_RegisterBits(_reg_reset, 1, 0);
+
+  _reg_status0 = new Adafruit_BusIO_Register(_i2cDev, REG_STATUS0);
+  _status0_comp = new Adafruit_BusIO_RegisterBits(_reg_status0, 1, 5);
 
   // Reset the device.
-  _reset_sw.write(1);
+  _reset_sw->write(1);
+  delay(100); // FIXME: determine better delay.
+  _reset_sw->write(0);
+  delay(100); // FIXME: determine better delay.
 
-  // Disable the device pull-downs on CC1 and CC2.
-  _switches0_pdwn1.write(0);
-  _switches0_pdwn2.write(0);
+  // Datasheet says we should read all interrupt register bits to clear them before we enable toggling.
+
+
+
 
   //if (powerMode == POWER_SOURCE) {
   //  // Disable device pull-down resistors (Rd) on CC1 and CC2, and
@@ -345,6 +374,88 @@ bool Adafruit_FUSB302B::begin(FUSB302B_PowerRole powerMode) {
   //  Serial.println("FUSB302B: POWER SINK mode is not yet supported!");
   //  return false;
   //}
+
+  //return true;
+}
+
+bool Adafruit_FUSB302B::beginSource(uint32_t advertisedVoltage) {
+
+  // Power on stuff!
+  _power_bandgap_wake->write(1);
+  _power_receiver_curref->write(1);
+  _power_measure_block->write(1);
+  _power_internal_osc->write(1);
+
+  // Disable the device pull-downs on CC1 and CC2.
+  _switches0_pdwn1->write(0);
+  _switches0_pdwn2->write(0);
+
+  // FIXME: enabling SRC polling seems to take over CC pull-ups, which I don't think we want.
+  //// Enable SRC polling.
+  //_control2_mode->write(0x03);
+  //_control2_toggle->write(1);
+
+
+  // Alright, let's do detection.
+
+  Serial.println("Measuring CC1...");
+
+  // Make sure CC2's pull-up, and measurement are both disabled.
+  _switches0_puen2->write(0);
+  //_switches0_meascc2->write(1);
+
+  // Make sure we're measuring CC lines instead of VBus...
+  _measure_meas_vbus->write(0);
+
+  // ...pull-up CC1...
+  _switches0_puen1->write(1);
+
+  // ...and enable measuring CC1.
+  _switches0_meascc1->write(1);
+
+  // Check if CC1's voltage is higher or lower than 1.6 V, which is the vRd threshold.
+  // (37 * 42 mV) + 42 mV = 1.596 V.
+  const uint32_t sinkThreshold = 37;
+  _measure_mdac->write(sinkThreshold);
+
+  delay(100); // TODO
+
+  bool higherThanThreshold = _status0_comp->read();
+
+  if (higherThanThreshold) {
+    Serial.println("vCC1 > vRd; nothing is connected");
+  } else {
+    Serial.println("vCC1 < vRd; something is connected. Making additional measurements...");
+
+    // Check if CC1's voltage is higher or lower than 0.2 V, which is the vRa threshold.
+    // (4 * 42 mV) + 42 mV = 0.21 V
+    const uint32_t poweredCableOrAdapterThreshold = 4;
+    _measure_mdac->write(poweredCableOrAdapterThreshold);
+    delay(100); // TODO
+
+    higherThanThreshold = _status0_comp->read();
+
+    if (higherThanThreshold) {
+      Serial.println("vRa < vCC1 < vRd; a sink is connected");
+    } else {
+      Serial.println("vCC1 < vRa; a powered cable or adapter is connected");
+    }
+  }
+
+  //while (true) {
+  //
+  //  uint32_t dacCC1 = _measure_mdac->read();
+  //  //Serial.print("CC1 DAC: 0b");
+  //  //Serial.println(dacCC1, BIN);
+  //
+  //  uint32_t millivoltsCC1 = (dacCC1 * 42) + 42;
+  //  Serial.print("CC1  mV: ");
+  //  Serial.println(millivoltsCC1);
+  //
+  //  delay(1000);
+  //}
+
+  //_switches0_puen2->write(0);
 
   return true;
 }
