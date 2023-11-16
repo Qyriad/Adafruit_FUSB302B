@@ -46,6 +46,18 @@
 
 const uint8_t DEVICE_ADDR = 0x22;
 
+/** The MDAC value for 1.60 V, the vRd threshold.
+ *
+ * (37 * 42 mV) + 42 mV = 1.596 V.
+ */
+const uint32_t THRESHOLD_vRd = 37;
+
+/** The MDAC value for 0.2 V, the vRa threshold.
+ *
+ * (4 * 42 mV) + 42 mV = 0.21 V.
+ */
+const uint32_t THRESHOLD_vRa = 4;
+
 inline bool matchesMask(uint8_t byte, uint8_t mask) {
   return (byte & mask) == mask;
 }
@@ -398,49 +410,119 @@ bool Adafruit_FUSB302B::beginSource(uint32_t advertisedVoltage) {
 
   // Alright, let's do detection.
 
-  Serial.println("Measuring CC1...");
+  while (true) {
 
-  // Make sure CC2's pull-up, and measurement are both disabled.
-  _switches0_puen2->write(0);
-  //_switches0_meascc2->write(1);
+    // Make sure everything's pull-ups, pull-downs, and measurements are all disabled first.
+    _switches0_pdwn1->write(0);
+    _switches0_puen1->write(0);
+    _switches0_meascc1->write(0);
+    _switches0_pdwn2->write(0);
+    _switches0_puen2->write(0);
+    _switches0_meascc2->write(0);
 
-  // Make sure we're measuring CC lines instead of VBus...
-  _measure_meas_vbus->write(0);
+    CCState cc1State = determineCC1State();
+    CCState cc2State = determineCC2State();
 
-  // ...pull-up CC1...
-  _switches0_puen1->write(1);
+    switch (cc1State) {
+      case CCOpen:
+        switch (cc2State) {
+          case CCOpen:
+            Serial.println("Nothing attached");
+            break;
 
-  // ...and enable measuring CC1.
-  _switches0_meascc1->write(1);
+          case CCRd:
+            Serial.println("Sink attached; flipped");
+            break;
 
-  // Check if CC1's voltage is higher or lower than 1.6 V, which is the vRd threshold.
-  // (37 * 42 mV) + 42 mV = 1.596 V.
-  const uint32_t sinkThreshold = 37;
-  _measure_mdac->write(sinkThreshold);
+          case CCRa:
+            Serial.println("Powered cable without sink attached; not flipped");
+            break;
+        }
+        break;
 
-  delay(100); // TODO
+      case CCRd:
+        switch (cc2State) {
+          case CCOpen:
+            Serial.println("Sink attached; not flipped");
+            break;
 
-  bool higherThanThreshold = _status0_comp->read();
+          case CCRd:
+            Serial.println("Debug accessory attached");
+            break;
 
-  if (higherThanThreshold) {
-    Serial.println("vCC1 > vRd; nothing is connected");
-  } else {
-    Serial.println("vCC1 < vRd; something is connected. Making additional measurements...");
+          case CCRa:
+            Serial.println("Powered cable with sink, VPA, or VPD attached; not flipped");
+            break;
+        }
+        break;
 
-    // Check if CC1's voltage is higher or lower than 0.2 V, which is the vRa threshold.
-    // (4 * 42 mV) + 42 mV = 0.21 V
-    const uint32_t poweredCableOrAdapterThreshold = 4;
-    _measure_mdac->write(poweredCableOrAdapterThreshold);
-    delay(100); // TODO
+      case CCRa:
+        switch (cc2State) {
+          case CCOpen:
+            Serial.println("Powered cable without sink attached; flipped");
+            break;
 
-    higherThanThreshold = _status0_comp->read();
+          case CCRd:
+            Serial.println("Powered cable with sink, VPA, or VPD attached; flipped");
+            break;
 
-    if (higherThanThreshold) {
-      Serial.println("vRa < vCC1 < vRd; a sink is connected");
-    } else {
-      Serial.println("vCC1 < vRa; a powered cable or adapter is connected");
+          case CCRa:
+            Serial.println("Audio adapter accessory attached");
+            break;
+        }
+        break;
+
+      default:
+        Serial.println("unreachable");
+        break;
     }
+
+    delay(3000);
   }
+
+  //Serial.println("Measuring CC1...");
+  //
+  //// Make sure CC2's pull-up, and measurement are both disabled.
+  //_switches0_puen2->write(0);
+  ////_switches0_meascc2->write(1);
+  //
+  //// Make sure we're measuring CC lines instead of VBus...
+  //_measure_meas_vbus->write(0);
+  //
+  //// ...pull-up CC1...
+  //_switches0_puen1->write(1);
+  //
+  //// ...and enable measuring CC1.
+  //_switches0_meascc1->write(1);
+  //
+  //// Check if CC1's voltage is higher or lower than 1.6 V, which is the vRd threshold.
+  //// (37 * 42 mV) + 42 mV = 1.596 V.
+  //const uint32_t sinkThreshold = 37;
+  //_measure_mdac->write(sinkThreshold);
+  //
+  //delay(100); // TODO
+  //
+  //bool higherThanThreshold = _status0_comp->read();
+  //
+  //if (higherThanThreshold) {
+  //  Serial.println("vCC1 > vRd; nothing is connected");
+  //} else {
+  //  Serial.println("vCC1 < vRd; something is connected. Making additional measurements...");
+  //
+  //  // Check if CC1's voltage is higher or lower than 0.2 V, which is the vRa threshold.
+  //  // (4 * 42 mV) + 42 mV = 0.21 V
+  //  const uint32_t poweredCableOrAdapterThreshold = 4;
+  //  _measure_mdac->write(poweredCableOrAdapterThreshold);
+  //  delay(100); // TODO
+  //
+  //  higherThanThreshold = _status0_comp->read();
+  //
+  //  if (higherThanThreshold) {
+  //    Serial.println("vRa < vCC1 < vRd; a sink is connected");
+  //  } else {
+  //    Serial.println("vCC1 < vRa; a powered cable or adapter is connected");
+  //  }
+  //}
 
   //while (true) {
   //
@@ -486,4 +568,98 @@ FUSB302B_DeviceId Adafruit_FUSB302B::getDeviceId() {
   Serial.println(deviceId.versionId, HEX);
 
   return deviceId;
+}
+
+CCState Adafruit_FUSB302B::determineCC1State() {
+  // Make sure CC2's pull-up and measurement are both disabled.
+  _switches0_puen2->write(0);
+  //_switches0_measurecc2->write(0);
+
+  // Make sure we're measuring CC lines instead of VBus.
+  _measure_meas_vbus->write(0);
+
+  // Pull-up CC1, and enable measuring it.
+  _switches0_puen1->write(1);
+  _switches0_meascc1->write(1);
+
+  // Compare to vRd threshold.
+  _measure_mdac->write(THRESHOLD_vRd);
+  delay(100); // TODO
+
+  if (_status0_comp->read()) {
+    //Serial.println("vCC1 > vRd; nothing is connected");
+
+    // Cleanup.
+    _switches0_puen1->write(0);
+    _switches0_meascc1->write(0);
+
+    return CCOpen;
+  }
+
+  // If we're lower than vRd, then *something* is connected.
+  // We need to make another measurement to determine what.
+  _measure_mdac->write(THRESHOLD_vRa);
+  delay(100); // TODO
+
+  if (_status0_comp->read()) {
+    //Serial.println("vRd > vCC1 > vRa");
+
+    // Cleanup.
+    _switches0_puen1->write(0);
+    _switches0_meascc1->write(0);
+
+    return CCRd;
+  }
+
+  //Serial.println("vCC1 < vRa");
+
+  // Cleanup.
+  _switches0_puen1->write(0);
+  _switches0_meascc1->write(0);
+
+  return CCRa;
+}
+
+CCState Adafruit_FUSB302B::determineCC2State() {
+
+  CCState state = CCOpen;
+
+  // Make sure we're measuring CC lines instead of VBus.
+  _measure_meas_vbus->write(0);
+
+  // Pull-up CC2, and enable measuring it.
+  _switches0_puen2->write(1);
+  _switches0_meascc2->write(1);
+
+  // Compare to vRd threshold.
+  _measure_mdac->write(THRESHOLD_vRd);
+  delay(100); // TODO
+
+  if (_status0_comp->read()) {
+    //Serial.println("vCC2 > vRd; nothing is connected");
+
+    state = CCOpen;
+  } else {
+
+    // If we're lower than vRd, then *something* is connected.
+    // We need to make another measurement to determine what.
+    _measure_mdac->write(THRESHOLD_vRa);
+    delay(100); // TODO
+
+    if (_status0_comp->read()) {
+      //Serial.println("vRd > vCC2 > vRa");
+
+      state = CCRd;
+    } else {
+      //Serial.println("vCC2 < vRa");
+
+      state = CCRa;
+    }
+  }
+
+  // Cleanup.
+  _switches0_puen2->write(0);
+  _switches0_meascc2->write(0);
+
+  return state;
 }

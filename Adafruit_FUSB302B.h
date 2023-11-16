@@ -34,6 +34,19 @@ enum FUSB302B_DataRole {
   DATA_DUAL,
 };
 
+enum CCState {
+  /** Nothing is attached. */
+  CCOpen,
+  /** A sink, VPA, VPD, debug accessory is attached.
+   * (Read other CC line to find out which).
+   */
+  CCRd,
+  /** A powered cable, VPA, VPD, or audio accessory is attached.
+   * (Read other CC line to find out which).
+   */
+  CCRa
+};
+
 class FUSB302B_DeviceId {
 
 public:
@@ -91,6 +104,10 @@ public:
   FUSB302B_DeviceId getDeviceId();
 
 private:
+
+  CCState determineCC1State();
+  CCState determineCC2State();
+
   Adafruit_I2CDevice *_i2cDev;
   TwoWire *_i2c;
 
