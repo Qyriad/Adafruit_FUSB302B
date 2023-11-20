@@ -52,6 +52,39 @@ enum CCPin {
   CC2,
 };
 
+enum CurrentAdvertisement {
+  CURRENT_NONE = 0x0,
+  /** 500 mA for USB 2.0 ports, 900 mA for single-lane USB 3.2, and 1.5 A for dual-lane USB 3.2. */
+  CURRENT_DEFAULT = 0x1,
+  CURRENT_1A5 = 0x2,
+  CURRENT_3A = 0x3,
+};
+
+enum PortConnection {
+  CONNECTION_NONE,
+  CONNECTION_SINK,
+  CONNECTION_POWERED_CABLE_NO_SINK,
+  /** Powered cable with sink, Vconn-powered accessory, or Vconn-powered device. */
+  CONNECTION_VCONN,
+  CONNECTION_DEBUG_ACCESSORY,
+  CONNECTION_AUDIO_ACCESSORY,
+};
+
+enum CableFlipped {
+  CABLE_NOT_FLIPPED,
+  CABLE_FLIPPED,
+  /** Not applicable. */
+  CABLE_NA,
+};
+
+struct PortState {
+  PortConnection connection;
+  CableFlipped flipped;
+
+  PortState(PortConnection connection, CableFlipped flipped = CABLE_NA) :
+    connection(connection), flipped(flipped) { }
+};
+
 class FUSB302B_DeviceId {
 
 public:
@@ -104,7 +137,8 @@ public:
   //Adafruit_FUSB302B(FUSB302B_PowerRole powerMode);
   Adafruit_FUSB302B(TwoWire *wire = &Wire);
 
-  bool beginSource(uint32_t advertisedVoltage); // FIXME: should be an enumeration.
+  PortState beginSource(CurrentAdvertisement advertisedCurrent);
+  CurrentAdvertisement beginSink(PortConnection sinkType);
 
   FUSB302B_DeviceId getDeviceId();
 
@@ -142,25 +176,25 @@ private:
 
   ////Adafruit_BusIO_Register _reg_slice;
   //
-  //Adafruit_BusIO_Register _reg_control0;
-  //
+  Adafruit_BusIO_Register *_reg_control0;
+
   ///** @brief `TX_START` of `CONTROL0` register, for starting the TX FIFO. Bit 0. */
   //Adafruit_BusIO_RegisterBits _control0_tx_start;
   //
   ///** @brief `AUTO_PRE` of `CONTROL0` register, for auto-starting TX when a good CRC is received. Bit 1. */
   //Adafruit_BusIO_RegisterBits _control0_auto_pre;
   //
-  ///** @brief `HOST_CUR` of `CONTROL0` register, for controlling the host pull-up current value. Bits 3:2.
-  // *
-  // * 00: No current
-  // *
-  // * 01: 80 uA for default USB power
-  // *
-  // * 10: 180 uA for 1.5 A
-  // *
-  // * 11: 330 uA for 3 A
-  // */
-  //Adafruit_BusIO_RegisterBits _control0_host_cur;
+  /** @brief `HOST_CUR` of `CONTROL0` register, for controlling the host pull-up current value. Bits 3:2.
+   *
+   * 00: No current
+   *
+   * 01: 80 uA for default USB power
+   *
+   * 10: 180 uA for 1.5 A
+   *
+   * 11: 330 uA for 3 A
+   */
+  Adafruit_BusIO_RegisterBits *_control0_host_cur;
   //
   ///** @brief `INT_MASK` of `CONTROL0` register, for controlling if interrupts are enabled. Bit 5.
   // *

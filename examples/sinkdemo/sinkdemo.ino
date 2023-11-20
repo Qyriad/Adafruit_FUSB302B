@@ -12,7 +12,10 @@ void setup() {
   //Adafruit_FUSB302B usbc(POWER_SOURCE);
   Adafruit_FUSB302B usbc;
   //usbc.begin(POWER_SOURCE);
-  usbc.beginSource(5);
+  while (true) {
+    usbc.beginSource(CURRENT_DEFAULT);
+    delay(2000);
+  }
 
   //auto devId = usbc.getDeviceId();
   //

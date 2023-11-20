@@ -226,6 +226,9 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
   _measure_meas_vbus = new Adafruit_BusIO_RegisterBits(_reg_measure, 1, 6);
   //_measure_reserved = new Adafruit_BusIO_RegisterBits(_reg_measure, 1, 7);
 
+  _reg_control0 = new Adafruit_BusIO_Register(_i2cDev, REG_CONTROL0);
+  _control0_host_cur = new Adafruit_BusIO_RegisterBits(_reg_control0, 2, 2);
+
   _reg_control2 = new Adafruit_BusIO_Register(_i2cDev, REG_CONTROL2);
   _control2_toggle = new Adafruit_BusIO_RegisterBits(_reg_control2, 1, 0);
   _control2_mode = new Adafruit_BusIO_RegisterBits(_reg_control2, 2, 2); // TODO: shift by 2 right?
@@ -390,7 +393,7 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
   //return true;
 }
 
-bool Adafruit_FUSB302B::beginSource(uint32_t advertisedVoltage) {
+PortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCurrent) {
 
   // Power on stuff!
   _power_bandgap_wake->write(1);
@@ -402,85 +405,82 @@ bool Adafruit_FUSB302B::beginSource(uint32_t advertisedVoltage) {
   _switches0_pdwn1->write(0);
   _switches0_pdwn2->write(0);
 
-  // FIXME: enabling SRC polling seems to take over CC pull-ups, which I don't think we want.
-  //// Enable SRC polling.
-  //_control2_mode->write(0x03);
-  //_control2_toggle->write(1);
-
 
   // Alright, let's do detection.
 
-  while (true) {
+  // Make sure everything's pull-ups, pull-downs, and measurements are all disabled first.
+  _switches0_pdwn1->write(0);
+  _switches0_puen1->write(0);
+  _switches0_meascc1->write(0);
+  _switches0_pdwn2->write(0);
+  _switches0_puen2->write(0);
+  _switches0_meascc2->write(0);
 
-    // Make sure everything's pull-ups, pull-downs, and measurements are all disabled first.
-    _switches0_pdwn1->write(0);
-    _switches0_puen1->write(0);
-    _switches0_meascc1->write(0);
-    _switches0_pdwn2->write(0);
-    _switches0_puen2->write(0);
-    _switches0_meascc2->write(0);
+  // When we do enable pull-ups (in determineCCState), use the requested current.
+  _control0_host_cur->write(advertisedCurrent);
 
-    CCState cc1State = determineCCState(CC1);
-    CCState cc2State = determineCCState(CC2);
 
-    switch (cc1State) {
-      case CCOpen:
-        switch (cc2State) {
-          case CCOpen:
-            Serial.println("Nothing attached");
-            break;
+  CCState cc1State = determineCCState(CC1);
+  CCState cc2State = determineCCState(CC2);
 
-          case CCRd:
-            Serial.println("Sink attached; flipped");
-            break;
+  switch (cc1State) {
+    case CCOpen:
+      switch (cc2State) {
+        case CCOpen:
+          Serial.println("Nothing attached");
+          return PortState(CONNECTION_NONE);
 
-          case CCRa:
-            Serial.println("Powered cable without sink attached; not flipped");
-            break;
-        }
-        break;
+        case CCRd:
+          Serial.println("Sink attached; flipped");
+          return PortState(CONNECTION_SINK, CABLE_FLIPPED);
 
-      case CCRd:
-        switch (cc2State) {
-          case CCOpen:
-            Serial.println("Sink attached; not flipped");
-            break;
+        case CCRa:
+          Serial.println("Powered cable without sink attached; not flipped");
+          return PortState(CONNECTION_POWERED_CABLE_NO_SINK, CABLE_FLIPPED);
+      }
+      break;
 
-          case CCRd:
-            Serial.println("Debug accessory attached");
-            break;
+    case CCRd:
+      switch (cc2State) {
+        case CCOpen:
+          Serial.println("Sink attached; not flipped");
+          return PortState(CONNECTION_SINK, CABLE_NOT_FLIPPED);
 
-          case CCRa:
-            Serial.println("Powered cable with sink, VPA, or VPD attached; not flipped");
-            break;
-        }
-        break;
+        case CCRd:
+          Serial.println("Debug accessory attached");
+          return PortState(CONNECTION_DEBUG_ACCESSORY);
 
-      case CCRa:
-        switch (cc2State) {
-          case CCOpen:
-            Serial.println("Powered cable without sink attached; flipped");
-            break;
+        case CCRa:
+          Serial.println("Powered cable with sink, VPA, or VPD attached; not flipped");
+          return PortState(CONNECTION_VCONN, CABLE_NOT_FLIPPED);
+      }
+      break;
 
-          case CCRd:
-            Serial.println("Powered cable with sink, VPA, or VPD attached; flipped");
-            break;
+    case CCRa:
+      switch (cc2State) {
+        case CCOpen:
+          Serial.println("Powered cable without sink attached; flipped");
+          return PortState(CONNECTION_POWERED_CABLE_NO_SINK, CABLE_FLIPPED);
 
-          case CCRa:
-            Serial.println("Audio adapter accessory attached");
-            break;
-        }
-        break;
+        case CCRd:
+          Serial.println("Powered cable with sink, VPA, or VPD attached; flipped");
+          return PortState(CONNECTION_VCONN, CABLE_FLIPPED);
 
-      default:
-        Serial.println("unreachable");
-        break;
-    }
+        case CCRa:
+          Serial.println("Audio adapter accessory attached");
+          return PortState(CONNECTION_AUDIO_ACCESSORY);
+      }
+      break;
 
-    delay(3000);
+    default:
+      Serial.println("unreachable");
+      break;
   }
+  return PortState(CONNECTION_NONE);
+}
 
-  return true;
+CurrentAdvertisement Adafruit_FUSB302B::beginSink(PortConnection sinkType) {
+  return CURRENT_NONE;
 }
 
 FUSB302B_DeviceId Adafruit_FUSB302B::getDeviceId() {
