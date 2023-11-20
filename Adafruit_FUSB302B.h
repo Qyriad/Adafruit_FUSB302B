@@ -44,7 +44,12 @@ enum CCState {
   /** A powered cable, VPA, VPD, or audio accessory is attached.
    * (Read other CC line to find out which).
    */
-  CCRa
+  CCRa,
+};
+
+enum CCPin {
+  CC1,
+  CC2,
 };
 
 class FUSB302B_DeviceId {
@@ -105,8 +110,7 @@ public:
 
 private:
 
-  CCState determineCC1State();
-  CCState determineCC2State();
+  CCState determineCCState(CCPin pin);
 
   Adafruit_I2CDevice *_i2cDev;
   TwoWire *_i2c;

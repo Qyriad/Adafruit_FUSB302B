@@ -420,8 +420,8 @@ bool Adafruit_FUSB302B::beginSource(uint32_t advertisedVoltage) {
     _switches0_puen2->write(0);
     _switches0_meascc2->write(0);
 
-    CCState cc1State = determineCC1State();
-    CCState cc2State = determineCC2State();
+    CCState cc1State = determineCCState(CC1);
+    CCState cc2State = determineCCState(CC2);
 
     switch (cc1State) {
       case CCOpen:
@@ -480,65 +480,6 @@ bool Adafruit_FUSB302B::beginSource(uint32_t advertisedVoltage) {
     delay(3000);
   }
 
-  //Serial.println("Measuring CC1...");
-  //
-  //// Make sure CC2's pull-up, and measurement are both disabled.
-  //_switches0_puen2->write(0);
-  ////_switches0_meascc2->write(1);
-  //
-  //// Make sure we're measuring CC lines instead of VBus...
-  //_measure_meas_vbus->write(0);
-  //
-  //// ...pull-up CC1...
-  //_switches0_puen1->write(1);
-  //
-  //// ...and enable measuring CC1.
-  //_switches0_meascc1->write(1);
-  //
-  //// Check if CC1's voltage is higher or lower than 1.6 V, which is the vRd threshold.
-  //// (37 * 42 mV) + 42 mV = 1.596 V.
-  //const uint32_t sinkThreshold = 37;
-  //_measure_mdac->write(sinkThreshold);
-  //
-  //delay(100); // TODO
-  //
-  //bool higherThanThreshold = _status0_comp->read();
-  //
-  //if (higherThanThreshold) {
-  //  Serial.println("vCC1 > vRd; nothing is connected");
-  //} else {
-  //  Serial.println("vCC1 < vRd; something is connected. Making additional measurements...");
-  //
-  //  // Check if CC1's voltage is higher or lower than 0.2 V, which is the vRa threshold.
-  //  // (4 * 42 mV) + 42 mV = 0.21 V
-  //  const uint32_t poweredCableOrAdapterThreshold = 4;
-  //  _measure_mdac->write(poweredCableOrAdapterThreshold);
-  //  delay(100); // TODO
-  //
-  //  higherThanThreshold = _status0_comp->read();
-  //
-  //  if (higherThanThreshold) {
-  //    Serial.println("vRa < vCC1 < vRd; a sink is connected");
-  //  } else {
-  //    Serial.println("vCC1 < vRa; a powered cable or adapter is connected");
-  //  }
-  //}
-
-  //while (true) {
-  //
-  //  uint32_t dacCC1 = _measure_mdac->read();
-  //  //Serial.print("CC1 DAC: 0b");
-  //  //Serial.println(dacCC1, BIN);
-  //
-  //  uint32_t millivoltsCC1 = (dacCC1 * 42) + 42;
-  //  Serial.print("CC1  mV: ");
-  //  Serial.println(millivoltsCC1);
-  //
-  //  delay(1000);
-  //}
-
-  //_switches0_puen2->write(0);
-
   return true;
 }
 
@@ -570,96 +511,66 @@ FUSB302B_DeviceId Adafruit_FUSB302B::getDeviceId() {
   return deviceId;
 }
 
-CCState Adafruit_FUSB302B::determineCC1State() {
-  // Make sure CC2's pull-up and measurement are both disabled.
-  _switches0_puen2->write(0);
-  //_switches0_measurecc2->write(0);
+/** Assumes:
+ * - The other CC pin's pull-up is disabled (`REG_SWITCHES0->puen2 = 0`)
+ * - The other CC pin's measurement is disabled (`REG_SWITCHES0->measureccX = 0`)
+ * - Measurement is set to CC instead of VBus (`REG_MEASURE->meas_vbus = 0`)
+ */
 
-  // Make sure we're measuring CC lines instead of VBus.
-  _measure_meas_vbus->write(0);
+CCState Adafruit_FUSB302B::determineCCState(CCPin pin) {
 
-  // Pull-up CC1, and enable measuring it.
-  _switches0_puen1->write(1);
-  _switches0_meascc1->write(1);
+  CCState state;
+
+  // Set register variables that abstract which CC pin we're operating on.
+  Adafruit_BusIO_RegisterBits *ccPullUp;
+  Adafruit_BusIO_RegisterBits *ccMeas;
+  if (pin == CC1) {
+    ccPullUp = _switches0_puen1;
+    ccMeas = _switches0_meascc1;
+  } else {
+    ccPullUp = _switches0_puen2;
+    ccMeas = _switches0_meascc2;
+  }
+
+  // Make sure our CC line is pulled-up, and enable measuring it.
+  ccPullUp->write(1);
+  ccMeas->write(1);
 
   // Compare to vRd threshold.
   _measure_mdac->write(THRESHOLD_vRd);
   delay(100); // TODO
 
   if (_status0_comp->read()) {
-    //Serial.println("vCC1 > vRd; nothing is connected");
-
-    // Cleanup.
-    _switches0_puen1->write(0);
-    _switches0_meascc1->write(0);
-
-    return CCOpen;
-  }
-
-  // If we're lower than vRd, then *something* is connected.
-  // We need to make another measurement to determine what.
-  _measure_mdac->write(THRESHOLD_vRa);
-  delay(100); // TODO
-
-  if (_status0_comp->read()) {
-    //Serial.println("vRd > vCC1 > vRa");
-
-    // Cleanup.
-    _switches0_puen1->write(0);
-    _switches0_meascc1->write(0);
-
-    return CCRd;
-  }
-
-  //Serial.println("vCC1 < vRa");
-
-  // Cleanup.
-  _switches0_puen1->write(0);
-  _switches0_meascc1->write(0);
-
-  return CCRa;
-}
-
-CCState Adafruit_FUSB302B::determineCC2State() {
-
-  CCState state = CCOpen;
-
-  // Make sure we're measuring CC lines instead of VBus.
-  _measure_meas_vbus->write(0);
-
-  // Pull-up CC2, and enable measuring it.
-  _switches0_puen2->write(1);
-  _switches0_meascc2->write(1);
-
-  // Compare to vRd threshold.
-  _measure_mdac->write(THRESHOLD_vRd);
-  delay(100); // TODO
-
-  if (_status0_comp->read()) {
-    //Serial.println("vCC2 > vRd; nothing is connected");
-
+    // vCC > vRd
+    // Nothing is connected.
     state = CCOpen;
   } else {
-
     // If we're lower than vRd, then *something* is connected.
-    // We need to make another measurement to determine what.
+    // we need to make another measurement to determine what.
     _measure_mdac->write(THRESHOLD_vRa);
     delay(100); // TODO
 
     if (_status0_comp->read()) {
-      //Serial.println("vRd > vCC2 > vRa");
-
+      // vCC > vRa && vCC < vRd
+      // (vCC is in-between vRa's and vRd's thresholds).
+      // We either have a sink, a Vconn-powered accessory,
+      // a Vconn-powered device, a or a debug accessory.
+      // Our caller will have to read the other CC pin's state
+      // to determine what.
       state = CCRd;
     } else {
-      //Serial.println("vCC2 < vRa");
-
-      state = CCRa;
+      // vCC < vRa
+      // We either have a powered cable, a Vconn-powered accessory,
+      // a Vconn-powered device, or an audio adapter accessory.
+      // Our caller will have to read the other CC pin's state
+      // to determine what.
+      state = CCRa;;
     }
   }
 
   // Cleanup.
-  _switches0_puen2->write(0);
-  _switches0_meascc2->write(0);
+  ccPullUp->write(0);
+  ccMeas->write(0);
 
   return state;
 }
