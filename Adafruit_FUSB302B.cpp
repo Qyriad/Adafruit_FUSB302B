@@ -144,6 +144,10 @@ union PD_MessageHeader {
 
 static_assert(sizeof(PD_MessageHeader) == 2, "PD_MessageHeader is wrong size (miscompilation?)");
 
+bool SinkPortState::isConnected() {
+  return currentAdvertisement != CURRENT_NONE;
+}
+
 //bool Adafruit_FUSB302B::begin(FUSB302B_PowerRole powerMode) {
 //Adafruit_FUSB302B::Adafruit_FUSB302B(FUSB302B_PowerRole powerMode) {
 Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
@@ -244,7 +248,9 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
   _reset_sw = new Adafruit_BusIO_RegisterBits(_reg_reset, 1, 0);
 
   _reg_status0 = new Adafruit_BusIO_Register(_i2cDev, REG_STATUS0);
+  _status0_bc_lvl = new Adafruit_BusIO_RegisterBits(_reg_status0, 2, 0);
   _status0_comp = new Adafruit_BusIO_RegisterBits(_reg_status0, 1, 5);
+  _status0_vbusok = new Adafruit_BusIO_RegisterBits(_reg_status0, 1, 7);
 
   // Reset the device.
   _reset_sw->write(1);
@@ -393,7 +399,7 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
   //return true;
 }
 
-PortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCurrent) {
+SourcePortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCurrent) {
 
   // Power on stuff!
   _power_bandgap_wake->write(1);
@@ -428,15 +434,15 @@ PortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCurrent)
       switch (cc2State) {
         case CCOpen:
           Serial.println("Nothing attached");
-          return PortState(CONNECTION_NONE);
+          return SourcePortState(CONNECTION_NONE);
 
         case CCRd:
           Serial.println("Sink attached; flipped");
-          return PortState(CONNECTION_SINK, CABLE_FLIPPED);
+          return SourcePortState(CONNECTION_SINK, CABLE_FLIPPED);
 
         case CCRa:
           Serial.println("Powered cable without sink attached; not flipped");
-          return PortState(CONNECTION_POWERED_CABLE_NO_SINK, CABLE_FLIPPED);
+          return SourcePortState(CONNECTION_POWERED_CABLE_NO_SINK, CABLE_FLIPPED);
       }
       break;
 
@@ -444,15 +450,15 @@ PortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCurrent)
       switch (cc2State) {
         case CCOpen:
           Serial.println("Sink attached; not flipped");
-          return PortState(CONNECTION_SINK, CABLE_NOT_FLIPPED);
+          return SourcePortState(CONNECTION_SINK, CABLE_NOT_FLIPPED);
 
         case CCRd:
           Serial.println("Debug accessory attached");
-          return PortState(CONNECTION_DEBUG_ACCESSORY);
+          return SourcePortState(CONNECTION_DEBUG_ACCESSORY);
 
         case CCRa:
           Serial.println("Powered cable with sink, VPA, or VPD attached; not flipped");
-          return PortState(CONNECTION_VCONN, CABLE_NOT_FLIPPED);
+          return SourcePortState(CONNECTION_VCONN, CABLE_NOT_FLIPPED);
       }
       break;
 
@@ -460,15 +466,15 @@ PortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCurrent)
       switch (cc2State) {
         case CCOpen:
           Serial.println("Powered cable without sink attached; flipped");
-          return PortState(CONNECTION_POWERED_CABLE_NO_SINK, CABLE_FLIPPED);
+          return SourcePortState(CONNECTION_POWERED_CABLE_NO_SINK, CABLE_FLIPPED);
 
         case CCRd:
           Serial.println("Powered cable with sink, VPA, or VPD attached; flipped");
-          return PortState(CONNECTION_VCONN, CABLE_FLIPPED);
+          return SourcePortState(CONNECTION_VCONN, CABLE_FLIPPED);
 
         case CCRa:
           Serial.println("Audio adapter accessory attached");
-          return PortState(CONNECTION_AUDIO_ACCESSORY);
+          return SourcePortState(CONNECTION_AUDIO_ACCESSORY);
       }
       break;
 
@@ -476,11 +482,98 @@ PortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCurrent)
       Serial.println("unreachable");
       break;
   }
-  return PortState(CONNECTION_NONE);
+  return SourcePortState(CONNECTION_NONE);
 }
 
-CurrentAdvertisement Adafruit_FUSB302B::beginSink(PortConnection sinkType) {
-  return CURRENT_NONE;
+CurrentAdvertisement bcLvlToCurrentAdvertisement(uint8_t bcLvl) {
+  switch (bcLvl) {
+    case 0x0:
+      // < 200 mV
+      return CURRENT_NONE;
+    case 0x1:
+      // > 200 mV, < 660 mV
+      return CURRENT_DEFAULT;
+    case 0x2:
+      // > 660 mV, < 1.23 V
+      return CURRENT_1A5;
+    case 0x3:
+      // > 1.23 V
+      return CURRENT_3A;
+    default:
+      Serial.print("bcLvlToCurrentAdvertisement called with invalid value 0x");
+      Serial.println(bcLvl, HEX);
+      return CURRENT_NONE;
+  }
+}
+
+const char * currentAdvertisementToString(CurrentAdvertisement value) {
+  switch (value) {
+    case CURRENT_NONE:
+      return "no current";
+    case CURRENT_DEFAULT:
+      return "default current";
+    case CURRENT_1A5:
+      return "1.5 A";
+    case CURRENT_3A:
+      return "3 A";
+    default:
+      return "<invalid current advertisement>";
+  }
+}
+
+SinkPortState Adafruit_FUSB302B::beginSink(PortConnection sinkType) {
+
+  if (sinkType != CONNECTION_SINK) {
+    Serial.println("VCONN, debug accessory, and audio accessory modes are not yet supported");
+    return SinkPortState(CURRENT_NONE);
+  }
+
+  // Power on stuff!
+  _power_bandgap_wake->write(1);
+  _power_receiver_curref->write(1);
+  _power_measure_block->write(1);
+  _power_internal_osc->write(1);
+
+  // Enable the device pull-downs on CC1 and CC2.
+  _switches0_pdwn1->write(1);
+  _switches0_pdwn2->write(1);
+
+  delay(100); // TODO
+
+  if (_status0_vbusok->read() == 0) {
+    return SinkPortState(CURRENT_NONE);
+  }
+
+  _switches0_meascc1->write(1);
+  _switches0_meascc2->write(0);
+  delay(100); // TODO
+
+  uint8_t vCC1 = _status0_bc_lvl->read();
+  CurrentAdvertisement cc1Adv = bcLvlToCurrentAdvertisement(vCC1);
+
+  _switches0_meascc1->write(0);
+  _switches0_meascc2->write(1);
+
+  delay(100); // TODO
+
+  uint8_t vCC2 = _status0_bc_lvl->read();
+  CurrentAdvertisement cc2Adv = bcLvlToCurrentAdvertisement(vCC2);
+
+  // The CC pin that is at a higher voltage (i.e. pulled up by Rp in the source) indicates the
+  // orientation [USB Type-C R2.2 § 4.5.1.2.1].
+  CurrentAdvertisement current = CURRENT_NONE;
+  CableFlipped flipped = CABLE_NA;
+  if (vCC1 > vCC2) {
+    current = bcLvlToCurrentAdvertisement(vCC1);
+    flipped = CABLE_NOT_FLIPPED;
+  } else if (vCC2 > vCC1) {
+    current = bcLvlToCurrentAdvertisement(vCC2);
+    flipped = CABLE_FLIPPED;
+  } else if (vCC1 != 0 && vCC2 != 0) {
+    Serial.println("Both Source's CCs have Rd termination; this is a debug accessory or invalid connection");
+  }
+
+  return SinkPortState(current, flipped);
 }
 
 FUSB302B_DeviceId Adafruit_FUSB302B::getDeviceId() {

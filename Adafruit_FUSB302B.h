@@ -54,9 +54,22 @@ enum CCPin {
 
 enum CurrentAdvertisement {
   CURRENT_NONE = 0x0,
-  /** 500 mA for USB 2.0 ports, 900 mA for single-lane USB 3.2, and 1.5 A for dual-lane USB 3.2. */
+  /** 500 mA for USB 2.0 ports, 900 mA for single-lane USB 3.2, and 1.5 A for dual-lane USB 3.2.
+   *
+   * Applies 80 uA to the CC line.
+   */
   CURRENT_DEFAULT = 0x1,
+
+  /** Medium current mode: 1.5 A
+   *
+   * Applies 180 uA to the CC line.
+   */
   CURRENT_1A5 = 0x2,
+
+  /** High current mode: 3 A
+   *
+   * Applies 330 uA to the CC line.
+   */
   CURRENT_3A = 0x3,
 };
 
@@ -77,12 +90,22 @@ enum CableFlipped {
   CABLE_NA,
 };
 
-struct PortState {
+struct SourcePortState {
   PortConnection connection;
   CableFlipped flipped;
 
-  PortState(PortConnection connection, CableFlipped flipped = CABLE_NA) :
+  SourcePortState(PortConnection connection, CableFlipped flipped = CABLE_NA) :
     connection(connection), flipped(flipped) { }
+};
+
+struct SinkPortState {
+  CurrentAdvertisement currentAdvertisement;
+  CableFlipped flipped;
+
+  SinkPortState(CurrentAdvertisement advertisement = CURRENT_DEFAULT, CableFlipped flipped = CABLE_NA) :
+    currentAdvertisement(advertisement), flipped(flipped) { }
+
+  bool isConnected();
 };
 
 class FUSB302B_DeviceId {
@@ -137,8 +160,10 @@ public:
   //Adafruit_FUSB302B(FUSB302B_PowerRole powerMode);
   Adafruit_FUSB302B(TwoWire *wire = &Wire);
 
-  PortState beginSource(CurrentAdvertisement advertisedCurrent);
-  CurrentAdvertisement beginSink(PortConnection sinkType);
+  SourcePortState beginSource(CurrentAdvertisement advertisedCurrent);
+
+  /** Requires FUSB302B's VBus to not be driven. */
+  SinkPortState beginSink(PortConnection sinkType);
 
   FUSB302B_DeviceId getDeviceId();
 
@@ -247,5 +272,7 @@ private:
   Adafruit_BusIO_RegisterBits *_reset_sw;
 
   Adafruit_BusIO_Register *_reg_status0;
+  Adafruit_BusIO_RegisterBits *_status0_bc_lvl;
   Adafruit_BusIO_RegisterBits *_status0_comp;
+  Adafruit_BusIO_RegisterBits *_status0_vbusok;
 };
