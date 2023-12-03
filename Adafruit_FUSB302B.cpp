@@ -144,12 +144,14 @@ union PD_MessageHeader {
 
 static_assert(sizeof(PD_MessageHeader) == 2, "PD_MessageHeader is wrong size (miscompilation?)");
 
+bool SourcePortState::isConnected() {
+  return connection != CONNECTION_NONE;
+}
+
 bool SinkPortState::isConnected() {
   return currentAdvertisement != CURRENT_NONE;
 }
 
-//bool Adafruit_FUSB302B::begin(FUSB302B_PowerRole powerMode) {
-//Adafruit_FUSB302B::Adafruit_FUSB302B(FUSB302B_PowerRole powerMode) {
 Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
   _i2c = wire;
   _i2cDev = new Adafruit_I2CDevice(
@@ -203,32 +205,9 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
   _switches0_puen1 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 6);
   _switches0_puen2 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 7);
 
-  //_reg_switches1 = Adafruit_BusIO_Register(_i2cDev, REG_SWITCHES1);
-  //_reg_measure = Adafruit_BusIO_Register(_i2cDev, REG_MEASURE);
-  //_reg_slice = Adafruit_BusIO_Register(_i2cDev, REG_SLICE);
-
-  //_reg_control0 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL0);
-  //_control0_tx_start = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 0);
-  //_control0_auto_pre = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 1);
-  //_control0_host_cur = Adafruit_BusIO_RegisterBits(&_reg_control0, 2, 2);
-  //_control0_int_mask = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 5);
-  //_control0_tx_flush = Adafruit_BusIO_RegisterBits(&_reg_control0, 1, 6);
-
-  //_reg_control1 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL1);
-  //
-  //_reg_control2 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL2);
-  //_control2_toggle = Adafruit_BusIO_RegisterBits(&_reg_control2, 1, 0);
-  //_control2_mode = Adafruit_BusIO_RegisterBits(&_reg_control2, 1, 2);
-  //_control2_wake_enable = Adafruit_BusIO_RegisterBits(&_reg_control2, 1, 3);
-  //_control2_toggle_rd_only = Adafruit_BusIO_RegisterBits(&_reg_control2, 1, 5);
-
-  //_reg_control3 = Adafruit_BusIO_Register(_i2cDev, REG_CONTROL3);
-  //_reg_mask = Adafruit_BusIO_Register(_i2cDev, REG_MASK);
-
   _reg_measure = new Adafruit_BusIO_Register(_i2cDev, REG_MEASURE);
   _measure_mdac = new Adafruit_BusIO_RegisterBits(_reg_measure, 6, 0);
   _measure_meas_vbus = new Adafruit_BusIO_RegisterBits(_reg_measure, 1, 6);
-  //_measure_reserved = new Adafruit_BusIO_RegisterBits(_reg_measure, 1, 7);
 
   _reg_control0 = new Adafruit_BusIO_Register(_i2cDev, REG_CONTROL0);
   _control0_host_cur = new Adafruit_BusIO_RegisterBits(_reg_control0, 2, 2);
@@ -259,144 +238,6 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
   delay(100); // FIXME: determine better delay.
 
   // Datasheet says we should read all interrupt register bits to clear them before we enable toggling.
-
-
-
-
-  //if (powerMode == POWER_SOURCE) {
-  //  // Disable device pull-down resistors (Rd) on CC1 and CC2, and
-  //  // apply host pull-up currents (Ip) to CC1 and CC2 (equivalent to Rp).
-  //  // USB Type-C R2.2 § 4.5.1.2.1
-  //
-  //  Adafruit_BusIO_Register switches0(_i2cDev, REG_SWITCHES0);
-  //
-  //  Adafruit_BusIO_RegisterBits cc1Rd(&switches0, 1, 0);
-  //  Adafruit_BusIO_RegisterBits cc2Rd(&switches0, 1, 1);
-  //  Adafruit_BusIO_RegisterBits cc1Measure(&switches0, 1, 4);
-  //  Adafruit_BusIO_RegisterBits cc2Measure(&switches0, 1, 5);
-  //  Adafruit_BusIO_RegisterBits cc1Ip(&switches0, 1, 6);
-  //  Adafruit_BusIO_RegisterBits cc2Ip(&switches0, 1, 7);
-  //
-  //  // 0: no pull down resistor.
-  //  cc1Rd.write(0);
-  //  cc2Rd.write(0);
-  //
-  //  // 1: Apply pull-up current.
-  //  cc1Ip.write(1);
-  //  cc2Ip.write(1);
-  //
-  //  // Enable measuring the voltage on the CC lines.
-  //  cc1Measure.write(1);
-  //  cc2Measure.write(1);
-  //
-  //  Adafruit_BusIO_Register measure(_i2cDev, REG_MEASURE);
-  //  Adafruit_BusIO_RegisterBits measureDac(&measure, 5, 0);
-  //
-  //  Adafruit_BusIO_Register control0(_i2cDev, REG_CONTROL0);
-  //
-  //   //HOST_Cur[1:0] (size = 2) is at bits 3:2 (so shift = 2).
-  //  Adafruit_BusIO_RegisterBits host_current(&control0, 2, 2);
-  //  host_current.write(CONTROL0_HOST_CURRENT_80uA);
-  //
-  //  // Now tell the FUSB302B to enable SOP' packets.
-  //  Adafruit_BusIO_Register control1(_i2cDev, REG_CONTROL1);
-  //  Adafruit_BusIO_RegisterBits enable_sop_prime(&control1, 1, 0);
-  //  enable_sop_prime.write(1);
-  //
-  //  // Tell the FUSB302B to set the "Source" bit when replying with a GoodCRC.
-  //  Adafruit_BusIO_Register switches1(_i2cDev, REG_SWITCHES1);
-  //  Adafruit_BusIO_RegisterBits powerRole(&switches1, 1, 7);
-  //  Adafruit_BusIO_RegisterBits autoCrc(&switches1, 1, 2);
-  //
-  //  powerRole.write(1);
-  //  autoCrc.write(1);
-  //
-  //  // Setup for reading general status information.
-  //  Adafruit_BusIO_Register status0(_i2cDev, REG_STATUS0);
-  //  Adafruit_BusIO_RegisterBits status0All(&status0, 8, 0);
-  //
-  //  Adafruit_BusIO_Register power(_i2cDev, REG_POWER);
-  //  Adafruit_BusIO_RegisterBits powerMeasureBlock(&power, 1, 2);
-  //  powerMeasureBlock.write(1);
-  //
-  //  Adafruit_BusIO_Register status1(_i2cDev, REG_STATUS1);
-  //  Adafruit_BusIO_RegisterBits rxEmpty(&status1, 1, 5);
-  //
-  //  Adafruit_BusIO_Register fifo(_i2cDev, REG_FIFO);
-  //
-  //  Serial.println("Entering read loop");
-  //
-  //  while (true) {
-  //
-  //    if (rxEmpty.read() != 1) {
-  //      Serial.println("");
-  //      uint8_t byte = 0;
-  //      fifo.read(&byte);
-  //
-  //      switch (byte) {
-  //        case TOKEN_TXON:
-  //          Serial.println("TXON");
-  //          break;
-  //        case TOKEN_SOP1:
-  //          Serial.println("SOP1");
-  //          break;
-  //        case TOKEN_SOP2:
-  //          Serial.println("SOP2");
-  //          break;
-  //        case TOKEN_SOP3:
-  //          Serial.println("SOP3");
-  //          break;
-  //        case TOKEN_RESET1:
-  //          Serial.println("RESET1");
-  //          break;
-  //        case TOKEN_RESET2:
-  //          Serial.println("RESET2");
-  //          break;
-  //        case TOKEN_PACKSYM:
-  //          Serial.println("PACKSYM");
-  //          break;
-  //        case TOKEN_JAM_CRC:
-  //          Serial.println("JAM_CRC");
-  //          break;
-  //        case TOKEN_EOP:
-  //          Serial.println("EOP");
-  //          break;
-  //        case TOKEN_TXOFF:
-  //          Serial.println("TXOFF");
-  //          break;
-  //        default:
-  //          Serial.print("Unknown token: 0x");
-  //          Serial.println(byte, HEX);
-  //
-  //          //if ((byte & 0b11100000) == 0b11100000) {
-  //          if (matchesMask(byte, 0b11100000)) {
-  //            Serial.println("SOP");
-  //          }
-  //          break;
-  //      }
-  //    } else {
-  //      uint8_t measureResults = measureDac.read();
-  //      Serial.print("Measured: 0x");
-  //      Serial.print(measureResults, HEX);
-  //      Serial.print("\t0x");
-  //      Serial.print(status0All.read(), HEX);
-  //      Serial.println("");
-  //    }
-  //
-  //    // Wait 10 milliseconds between loops.
-  //    delay(10);
-  //  }
-  //
-  //} else if (powerMode == POWER_SINK) {
-  //  // Enable device pull-down resistors (Rd) on CC1 and CC2,
-  //  // and disable host pull-up currents (Ip) on CC1 and CC2.
-  //  // USB Type-C R2.2 § 4.5.1.2.1
-  //
-  //  Serial.println("FUSB302B: POWER SINK mode is not yet supported!");
-  //  return false;
-  //}
-
-  //return true;
 }
 
 SourcePortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCurrent) {
@@ -433,15 +274,12 @@ SourcePortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCu
     case CCOpen:
       switch (cc2State) {
         case CCOpen:
-          Serial.println("Nothing attached");
           return SourcePortState(CONNECTION_NONE);
 
         case CCRd:
-          Serial.println("Sink attached; flipped");
           return SourcePortState(CONNECTION_SINK, CABLE_FLIPPED);
 
         case CCRa:
-          Serial.println("Powered cable without sink attached; not flipped");
           return SourcePortState(CONNECTION_POWERED_CABLE_NO_SINK, CABLE_FLIPPED);
       }
       break;
@@ -449,15 +287,12 @@ SourcePortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCu
     case CCRd:
       switch (cc2State) {
         case CCOpen:
-          Serial.println("Sink attached; not flipped");
           return SourcePortState(CONNECTION_SINK, CABLE_NOT_FLIPPED);
 
         case CCRd:
-          Serial.println("Debug accessory attached");
           return SourcePortState(CONNECTION_DEBUG_ACCESSORY);
 
         case CCRa:
-          Serial.println("Powered cable with sink, VPA, or VPD attached; not flipped");
           return SourcePortState(CONNECTION_VCONN, CABLE_NOT_FLIPPED);
       }
       break;
@@ -465,15 +300,12 @@ SourcePortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCu
     case CCRa:
       switch (cc2State) {
         case CCOpen:
-          Serial.println("Powered cable without sink attached; flipped");
           return SourcePortState(CONNECTION_POWERED_CABLE_NO_SINK, CABLE_FLIPPED);
 
         case CCRd:
-          Serial.println("Powered cable with sink, VPA, or VPD attached; flipped");
           return SourcePortState(CONNECTION_VCONN, CABLE_FLIPPED);
 
         case CCRa:
-          Serial.println("Audio adapter accessory attached");
           return SourcePortState(CONNECTION_AUDIO_ACCESSORY);
       }
       break;
@@ -538,23 +370,18 @@ SinkPortState Adafruit_FUSB302B::beginSink(PortConnection sinkType) {
   _switches0_pdwn1->write(1);
   _switches0_pdwn2->write(1);
 
-  delay(100); // TODO
-
   if (_status0_vbusok->read() == 0) {
     return SinkPortState(CURRENT_NONE);
   }
 
   _switches0_meascc1->write(1);
   _switches0_meascc2->write(0);
-  delay(100); // TODO
 
   uint8_t vCC1 = _status0_bc_lvl->read();
   CurrentAdvertisement cc1Adv = bcLvlToCurrentAdvertisement(vCC1);
 
   _switches0_meascc1->write(0);
   _switches0_meascc2->write(1);
-
-  delay(100); // TODO
 
   uint8_t vCC2 = _status0_bc_lvl->read();
   CurrentAdvertisement cc2Adv = bcLvlToCurrentAdvertisement(vCC2);
@@ -641,7 +468,6 @@ CCState Adafruit_FUSB302B::determineCCState(CCPin pin) {
     // If we're lower than vRd, then *something* is connected.
     // we need to make another measurement to determine what.
     _measure_mdac->write(THRESHOLD_vRa);
-    delay(100); // TODO
 
     if (_status0_comp->read()) {
       // vCC > vRa && vCC < vRd

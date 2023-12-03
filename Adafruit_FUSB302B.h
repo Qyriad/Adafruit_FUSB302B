@@ -94,8 +94,10 @@ struct SourcePortState {
   PortConnection connection;
   CableFlipped flipped;
 
-  SourcePortState(PortConnection connection, CableFlipped flipped = CABLE_NA) :
+  SourcePortState(PortConnection connection = CONNECTION_NONE, CableFlipped flipped = CABLE_NA) :
     connection(connection), flipped(flipped) { }
+
+  bool isConnected();
 };
 
 struct SinkPortState {
