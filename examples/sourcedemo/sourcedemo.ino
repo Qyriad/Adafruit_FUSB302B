@@ -56,11 +56,6 @@ void setup() {
     Serial.println(flippedDesc);
     delay(2000);
   }
-
-  //auto devId = usbc.getDeviceId();
-  //
-  //Serial.print("Got device ID: 0x");
-  //Serial.println(devId.deviceId, HEX);
 }
 
 void loop() {

@@ -1,7 +1,9 @@
 #include <assert.h>
+#include <cstdint>
 
 #include "Adafruit_BusIO_Register.h"
 #include "Adafruit_FUSB302B.h"
+#include "Arduino.h"
 
 #define REG_DEVICE_ID (0x01)
 
@@ -31,7 +33,15 @@
 // This register is 8 bits wide.
 #define REG_FIFO      (0x43)
 
+#define REG_MASK      (0x0A)
+
 #define REG_RESET     (0x0C)
+
+#define REG_MASKA     (0x0E)
+#define REG_MASKB     (0x0F)
+#define REG_INTERRUPTA (0x3E)
+#define REG_INTERRUPTB (0x3F)
+#define REG_INTERRUPT  (0x42)
 
 #define TOKEN_TXON    (0xA1)
 #define TOKEN_SOP1    (0x12)
@@ -69,81 +79,6 @@ FUSB302B_DeviceId::FUSB302B_DeviceId() {
   revisionId = 0;
 }
 
-/**
- * @brief SOP packets (in contrast to SOP' and SOP'' packets) are for communicating to and from
- * entities at the ends of a USB connection (in contrast to communicating with the cable itself).
- */
-struct PD_SOP_Header {
-  // Bit 15.
-  uint16_t extended : 1;
-
-  // Bits 14..12
-  uint16_t data_objects_count : 3;
-
-  // Bits 11...9
-  uint16_t message_id : 3;
-
-  // Bit 8
-  /** @brief Indicates the Port's current power role: `0` for Sink, `1` for Source. */
-  uint16_t port_power_role : 1;
-
-  // Bits 7...6
-  /** @brief Should always be `0b01`, to indicate USB PD R2.
-   *
-   * R1 is the "USB Battery Charging" (BC) spec, which predates USB-C and saw little use,
-   * and the FUSB302B is not aware of R3.
-   */
-  uint16_t spec_rev : 2;
-
-  // Bit 5
-  /** @brief Indicates the Port's current data role: `0` for UFP, `0` for DFP. */
-  uint16_t port_data_role : 1;
-
-  // Bits 4...0
-  uint16_t message_type: 5;
-};
-
-struct PD_SOPP_Header {
-  // Bit 15.
-  /** @brief Set to 0 for a Control Message or Data Message; set to 1 for an Extended Message. */
-  uint16_t extended : 1;
-
-  // Bits 14..12
-  /**
-   * When @ref extended is `0`, this indicates the number of 32-bit Data Objects after this header.
-   * `0` indicates a Control Message, as Control Messages do not have any Data Objects.
-   */
-  // TODO: extended message header
-  uint16_t data_objects_count : 3;
-
-  // Bits 11...9
-  /**
-   * Starts at 0; incremented by the Message originator when a Message is replied to with GoodCRC.
-   */
-  uint16_t message_id : 3;
-
-  // Bit 8
-  /** I think this should always be `0`, as we are not a Vconn-powered device (VPD). */
-  uint16_t cable_plug : 1;
-
-  // Bits 7...6
-  uint16_t spec_rev : 2;
-
-  // Bit 5
-  uint16_t __reserved : 1;
-
-  // Bits 4...0
-  uint16_t message_type: 5;
-};
-
-union PD_MessageHeader {
-  PD_SOP_Header sop;
-  PD_SOPP_Header sop_prime;
-  uint16_t value;
-};
-
-static_assert(sizeof(PD_MessageHeader) == 2, "PD_MessageHeader is wrong size (miscompilation?)");
-
 bool SourcePortState::isConnected() {
   return connection != CONNECTION_NONE;
 }
@@ -159,8 +94,8 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
     _i2c
   );
 
-  if (!_i2cDev->begin()) {
-    //return false;
+  if (!_i2cDev->begin(false)) {
+    Serial.println("Could not initialize I2C bus");
     while (true) { }
   }
 
@@ -169,11 +104,11 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
   // The FUSB302B has a bunch of valid device IDs that could be returned here.
   // To check if this one is valid, we'll check that it's not 0xFF or 0x00.
   if (_deviceId.deviceId == 0 || _deviceId.deviceId == 0xFF) {
-    //return false;
+    Serial.print("Got invalid device ID 0x");
+    Serial.println(_deviceId.deviceId, HEX);
     while (true) { }
   }
 
-  Serial.println("FUSB302B: resetting..."); // Qyriad
   // Alright to start, let's reset the device, just in case.
   Adafruit_BusIO_Register resetReg(_i2cDev, REG_RESET);
   Adafruit_BusIO_RegisterBits softwareReset(&resetReg, /*width*/ 1, /*shift*/ 0);
@@ -187,54 +122,58 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
     Serial.print(_deviceId.deviceId, HEX);
     Serial.print("After: 0x");
     Serial.println(newDeviceId.deviceId, HEX);
-    //return false;
     while (true) { }
   }
 
-  Serial.println("Reset complete"); // Qyriad
-
-
-  // POWER SOURCE MODE XXX(Qyriad)
-
   // Setup registers.
-  _reg_switches0     = new Adafruit_BusIO_Register(_i2cDev, REG_SWITCHES0);
-  _switches0_pdwn1   = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 0);
-  _switches0_pdwn2   = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 1);
-  _switches0_meascc1 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 2);
-  _switches0_meascc2 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 3);
-  _switches0_puen1 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 6);
-  _switches0_puen2 = new Adafruit_BusIO_RegisterBits(_reg_switches0, 1, 7);
+  _regSwitches0     = new Adafruit_BusIO_Register(_i2cDev, REG_SWITCHES0);
+  _switches0Pdwn1   = new Adafruit_BusIO_RegisterBits(_regSwitches0, 1, 0);
+  _switches0Pdwn2   = new Adafruit_BusIO_RegisterBits(_regSwitches0, 1, 1);
+  _switches0Meascc1 = new Adafruit_BusIO_RegisterBits(_regSwitches0, 1, 2);
+  _switches0Meascc2 = new Adafruit_BusIO_RegisterBits(_regSwitches0, 1, 3);
+  _switches0Puen1 = new Adafruit_BusIO_RegisterBits(_regSwitches0, 1, 6);
+  _switches0Puen2 = new Adafruit_BusIO_RegisterBits(_regSwitches0, 1, 7);
 
-  _reg_measure = new Adafruit_BusIO_Register(_i2cDev, REG_MEASURE);
-  _measure_mdac = new Adafruit_BusIO_RegisterBits(_reg_measure, 6, 0);
-  _measure_meas_vbus = new Adafruit_BusIO_RegisterBits(_reg_measure, 1, 6);
+  _regMeasure = new Adafruit_BusIO_Register(_i2cDev, REG_MEASURE);
+  _measureMdac = new Adafruit_BusIO_RegisterBits(_regMeasure, 6, 0);
+  _measureMeasVbus = new Adafruit_BusIO_RegisterBits(_regMeasure, 1, 6);
 
-  _reg_control0 = new Adafruit_BusIO_Register(_i2cDev, REG_CONTROL0);
-  _control0_host_cur = new Adafruit_BusIO_RegisterBits(_reg_control0, 2, 2);
+  _regControl0 = new Adafruit_BusIO_Register(_i2cDev, REG_CONTROL0);
+  _control0HostCur = new Adafruit_BusIO_RegisterBits(_regControl0, 2, 2);
+  _control0IntMask = new Adafruit_BusIO_RegisterBits(_regControl0, 1, 5);
 
-  _reg_control2 = new Adafruit_BusIO_Register(_i2cDev, REG_CONTROL2);
-  _control2_toggle = new Adafruit_BusIO_RegisterBits(_reg_control2, 1, 0);
-  _control2_mode = new Adafruit_BusIO_RegisterBits(_reg_control2, 2, 2); // TODO: shift by 2 right?
+  _regControl2 = new Adafruit_BusIO_Register(_i2cDev, REG_CONTROL2);
+  _control2Toggle = new Adafruit_BusIO_RegisterBits(_regControl2, 1, 0);
+  _control2Mode = new Adafruit_BusIO_RegisterBits(_regControl2, 2, 2); // TODO: shift by 2 right?
 
-  _reg_power = new Adafruit_BusIO_Register(_i2cDev, REG_POWER);
-  _power_bandgap_wake = new Adafruit_BusIO_RegisterBits(_reg_power, 1, 0);
-  _power_receiver_curref = new Adafruit_BusIO_RegisterBits(_reg_power, 1, 1);
-  _power_measure_block = new Adafruit_BusIO_RegisterBits(_reg_power, 1, 2);
-  _power_internal_osc = new Adafruit_BusIO_RegisterBits(_reg_power, 1, 3);
+  _regPower = new Adafruit_BusIO_Register(_i2cDev, REG_POWER);
+  _powerBandgapWake = new Adafruit_BusIO_RegisterBits(_regPower, 1, 0);
+  _powerReceiverCurref = new Adafruit_BusIO_RegisterBits(_regPower, 1, 1);
+  _powerMeasureBlock = new Adafruit_BusIO_RegisterBits(_regPower, 1, 2);
+  _powerInternalOsc = new Adafruit_BusIO_RegisterBits(_regPower, 1, 3);
 
-  _reg_reset = new Adafruit_BusIO_Register(_i2cDev, REG_RESET);
+  _regMask = new Adafruit_BusIO_Register(_i2cDev, REG_MASK);
 
-  _reset_sw = new Adafruit_BusIO_RegisterBits(_reg_reset, 1, 0);
+  _regReset = new Adafruit_BusIO_Register(_i2cDev, REG_RESET);
 
-  _reg_status0 = new Adafruit_BusIO_Register(_i2cDev, REG_STATUS0);
-  _status0_bc_lvl = new Adafruit_BusIO_RegisterBits(_reg_status0, 2, 0);
-  _status0_comp = new Adafruit_BusIO_RegisterBits(_reg_status0, 1, 5);
-  _status0_vbusok = new Adafruit_BusIO_RegisterBits(_reg_status0, 1, 7);
+  _regMaska = new Adafruit_BusIO_Register(_i2cDev, REG_MASKA);
+  _regMaskb = new Adafruit_BusIO_Register(_i2cDev, REG_MASKB);
+
+  _resetSw = new Adafruit_BusIO_RegisterBits(_regReset, 1, 0);
+
+  _regStatus0 = new Adafruit_BusIO_Register(_i2cDev, REG_STATUS0);
+  _status0BcLvl = new Adafruit_BusIO_RegisterBits(_regStatus0, 2, 0);
+  _status0Comp = new Adafruit_BusIO_RegisterBits(_regStatus0, 1, 5);
+  _status0Vbusok = new Adafruit_BusIO_RegisterBits(_regStatus0, 1, 7);
+
+  _regInterrupta = new Adafruit_BusIO_Register(_i2cDev, REG_INTERRUPTA);
+  _regInterruptb = new Adafruit_BusIO_Register(_i2cDev, REG_INTERRUPTB);
+  _regInterrupt = new Adafruit_BusIO_Register(_i2cDev, REG_INTERRUPT);
 
   // Reset the device.
-  _reset_sw->write(1);
+  _resetSw->write(1);
   delay(100); // FIXME: determine better delay.
-  _reset_sw->write(0);
+  _resetSw->write(0);
   delay(100); // FIXME: determine better delay.
 
   // Datasheet says we should read all interrupt register bits to clear them before we enable toggling.
@@ -243,28 +182,28 @@ Adafruit_FUSB302B::Adafruit_FUSB302B(TwoWire *wire) {
 SourcePortState Adafruit_FUSB302B::beginSource(CurrentAdvertisement advertisedCurrent) {
 
   // Power on stuff!
-  _power_bandgap_wake->write(1);
-  _power_receiver_curref->write(1);
-  _power_measure_block->write(1);
-  _power_internal_osc->write(1);
+  _powerBandgapWake->write(1);
+  _powerReceiverCurref->write(1);
+  _powerMeasureBlock->write(1);
+  _powerInternalOsc->write(1);
 
   // Disable the device pull-downs on CC1 and CC2.
-  _switches0_pdwn1->write(0);
-  _switches0_pdwn2->write(0);
+  _switches0Pdwn1->write(0);
+  _switches0Pdwn2->write(0);
 
 
   // Alright, let's do detection.
 
   // Make sure everything's pull-ups, pull-downs, and measurements are all disabled first.
-  _switches0_pdwn1->write(0);
-  _switches0_puen1->write(0);
-  _switches0_meascc1->write(0);
-  _switches0_pdwn2->write(0);
-  _switches0_puen2->write(0);
-  _switches0_meascc2->write(0);
+  _switches0Pdwn1->write(0);
+  _switches0Puen1->write(0);
+  _switches0Meascc1->write(0);
+  _switches0Pdwn2->write(0);
+  _switches0Puen2->write(0);
+  _switches0Meascc2->write(0);
 
   // When we do enable pull-ups (in determineCCState), use the requested current.
-  _control0_host_cur->write(advertisedCurrent);
+  _control0HostCur->write(advertisedCurrent);
 
 
   CCState cc1State = determineCCState(CC1);
@@ -353,37 +292,34 @@ const char * currentAdvertisementToString(CurrentAdvertisement value) {
   }
 }
 
-SinkPortState Adafruit_FUSB302B::beginSink(PortConnection sinkType) {
+SinkPortState Adafruit_FUSB302B::pollSink() {
 
-  if (sinkType != CONNECTION_SINK) {
-    Serial.println("VCONN, debug accessory, and audio accessory modes are not yet supported");
-    return SinkPortState(CURRENT_NONE);
-  }
+  // TODO: support other kinds of connections besides CONNECTION_SINK.
 
   // Power on stuff!
-  _power_bandgap_wake->write(1);
-  _power_receiver_curref->write(1);
-  _power_measure_block->write(1);
-  _power_internal_osc->write(1);
+  _powerBandgapWake->write(1);
+  _powerReceiverCurref->write(1);
+  _powerMeasureBlock->write(1);
+  _powerInternalOsc->write(1);
 
   // Enable the device pull-downs on CC1 and CC2.
-  _switches0_pdwn1->write(1);
-  _switches0_pdwn2->write(1);
+  _switches0Pdwn1->write(1);
+  _switches0Pdwn2->write(1);
 
-  if (_status0_vbusok->read() == 0) {
+  if (_status0Vbusok->read() == 0) {
     return SinkPortState(CURRENT_NONE);
   }
 
-  _switches0_meascc1->write(1);
-  _switches0_meascc2->write(0);
+  _switches0Meascc1->write(1);
+  _switches0Meascc2->write(0);
 
-  uint8_t vCC1 = _status0_bc_lvl->read();
+  uint8_t vCC1 = _status0BcLvl->read();
   CurrentAdvertisement cc1Adv = bcLvlToCurrentAdvertisement(vCC1);
 
-  _switches0_meascc1->write(0);
-  _switches0_meascc2->write(1);
+  _switches0Meascc1->write(0);
+  _switches0Meascc2->write(1);
 
-  uint8_t vCC2 = _status0_bc_lvl->read();
+  uint8_t vCC2 = _status0BcLvl->read();
   CurrentAdvertisement cc2Adv = bcLvlToCurrentAdvertisement(vCC2);
 
   // The CC pin that is at a higher voltage (i.e. pulled up by Rp in the source) indicates the
@@ -401,6 +337,118 @@ SinkPortState Adafruit_FUSB302B::beginSink(PortConnection sinkType) {
   }
 
   return SinkPortState(current, flipped);
+}
+
+void Adafruit_FUSB302B::enableInterrupts(FUSB302B_Interrupts interrupts) {
+  // First disable *all* interrupts.
+  _control0IntMask->write(1);
+  _regMaska->write(0xFF, 1);
+  _regMaskb->write(0xFF, 1);
+  _regMask->write(0xFF, 1);
+
+  // Read all the interrupt bits, to clear any existing ones.
+  clearInterrupts();
+
+  uint8_t intMask = ~(0xFF & interrupts);
+
+  Serial.print("REG_MASK = 0x");
+  Serial.println(intMask, HEX);
+  _regMask->write(intMask, 1);
+
+  delay(300);
+  _control0IntMask->write(0);
+}
+
+void Adafruit_FUSB302B::clearInterrupts() {
+  noInterrupts();
+  uint8_t buffer[1];
+  _regInterrupta->read(buffer, 1);
+  _regInterruptb->read(buffer, 1);
+  _regInterrupt->read(buffer, 1);
+  interrupts();
+}
+
+void Adafruit_FUSB302B::whatInterrupts() {
+  noInterrupts();
+
+  uint8_t interrupt = 0;
+  uint8_t interrupta = 0;
+  uint8_t interruptb = 0;
+  _regInterrupt->read(&interrupt);
+  _regInterrupta->read(&interrupta);
+  _regInterruptb->read(&interruptb);
+
+  if (interrupt) {
+    Serial.println("REG_INTERRUPT:");
+  }
+  if (interrupt & 0x80) {
+    Serial.println("\tI_VBUSOK");
+  }
+  if (interrupt & 0x40) {
+    Serial.println("\tI_ACTIVITY");
+  }
+  if (interrupt & 0x20) {
+    Serial.println("\tI_COMP_CHNG");
+  }
+  if (interrupt & 0x10) {
+    Serial.println("\tI_CRC_CHK");
+  }
+  if (interrupt & 0x08) {
+    Serial.println("\tI_ALERT");
+  }
+  if (interrupt & 0x04) {
+    Serial.println("\tI_WAKE");
+  }
+  if (interrupt & 0x02) {
+    Serial.println("\tI_COLLISION");
+  }
+  if (interrupt & 0x01) {
+    Serial.println("\tI_BC_LVL");
+  }
+
+  if (interrupta) {
+    Serial.println("REG_INTERRUPTA:");
+  }
+  if (interrupta & 0x80) {
+    Serial.println("\tI_OCP_TEMP");
+  }
+  if (interrupta & 0x40) {
+    Serial.println("\tI_TOGDONE");
+  }
+  if (interrupta & 0x20) {
+    Serial.println("\tI_SOFTFAIL");
+  }
+  if (interrupta & 0x10) {
+    Serial.println("\tI_RETRYFAIL");
+  }
+  if (interrupta & 0x08) {
+    Serial.println("\tI_HARDSENT");
+  }
+  if (interrupta & 0x04) {
+    Serial.println("\tI_TXSENT");
+  }
+  if (interrupta & 0x02) {
+    Serial.println("\tI_SOFTRST");
+  }
+  if (interrupta & 0x01) {
+    Serial.println("\tI_HARDRST");
+  }
+
+  if (interruptb) {
+    Serial.println("REG_INTERRUPTB:");
+  }
+  if (interruptb & 0x01) {
+    Serial.println("\tI_GCRCSENT");
+  }
+
+  //Serial.print("I/A/B: 0x");
+  //Serial.print(interrupt);
+  //Serial.print(", 0x");
+  //Serial.print(interrupta);
+  //Serial.print(", 0x");
+  //Serial.println(interruptb);
+
+  interrupts();
 }
 
 FUSB302B_DeviceId Adafruit_FUSB302B::getDeviceId() {
@@ -425,9 +473,6 @@ FUSB302B_DeviceId Adafruit_FUSB302B::getDeviceId() {
   deviceId.productId = productId.read();
   deviceId.revisionId = revisionId.read();
 
-  Serial.print("Version ID: 0x");
-  Serial.println(deviceId.versionId, HEX);
-
   return deviceId;
 }
 
@@ -445,11 +490,11 @@ CCState Adafruit_FUSB302B::determineCCState(CCPin pin) {
   Adafruit_BusIO_RegisterBits *ccPullUp;
   Adafruit_BusIO_RegisterBits *ccMeas;
   if (pin == CC1) {
-    ccPullUp = _switches0_puen1;
-    ccMeas = _switches0_meascc1;
+    ccPullUp = _switches0Puen1;
+    ccMeas = _switches0Meascc1;
   } else {
-    ccPullUp = _switches0_puen2;
-    ccMeas = _switches0_meascc2;
+    ccPullUp = _switches0Puen2;
+    ccMeas = _switches0Meascc2;
   }
 
   // Make sure our CC line is pulled-up, and enable measuring it.
@@ -457,19 +502,19 @@ CCState Adafruit_FUSB302B::determineCCState(CCPin pin) {
   ccMeas->write(1);
 
   // Compare to vRd threshold.
-  _measure_mdac->write(THRESHOLD_vRd);
+  _measureMdac->write(THRESHOLD_vRd);
   delay(100); // TODO
 
-  if (_status0_comp->read()) {
+  if (_status0Comp->read()) {
     // vCC > vRd
     // Nothing is connected.
     state = CCOpen;
   } else {
     // If we're lower than vRd, then *something* is connected.
     // we need to make another measurement to determine what.
-    _measure_mdac->write(THRESHOLD_vRa);
+    _measureMdac->write(THRESHOLD_vRa);
 
-    if (_status0_comp->read()) {
+    if (_status0Comp->read()) {
       // vCC > vRa && vCC < vRd
       // (vCC is in-between vRa's and vRd's thresholds).
       // We either have a sink, a Vconn-powered accessory,
