@@ -339,6 +339,11 @@ SinkPortState Adafruit_FUSB302B::pollSink() {
   return SinkPortState(current, flipped);
 }
 
+void Adafruit_FUSB302B::setInterruptHandler(Adafruit_FUSB302B::InterruptHandler handler) {
+  this->handler = handler;
+  attachInterrupt(digitalPinToInterrupt(12), handler, FALLING);
+}
+
 void Adafruit_FUSB302B::enableInterrupts(FUSB302B_Interrupts interrupts) {
   // First disable *all* interrupts.
   _control0IntMask->write(1);
@@ -357,6 +362,7 @@ void Adafruit_FUSB302B::enableInterrupts(FUSB302B_Interrupts interrupts) {
 
   delay(300);
   _control0IntMask->write(0);
+  interrupts();
 }
 
 void Adafruit_FUSB302B::clearInterrupts() {
@@ -365,7 +371,7 @@ void Adafruit_FUSB302B::clearInterrupts() {
   _regInterrupta->read(buffer, 1);
   _regInterruptb->read(buffer, 1);
   _regInterrupt->read(buffer, 1);
-  interrupts();
+  //interrupts();
 }
 
 void Adafruit_FUSB302B::whatInterrupts() {

@@ -13,7 +13,7 @@
  *
  * @section author Author
  *
- * Written by Qyriad <qyriad@qyriad.me>, 2023.
+ * Written by Qyriad <qyriad@qyriad.me>, 2024.
  *
  * @section license License
  *
@@ -77,6 +77,9 @@
 /** @private While this API is WIP. */
 enum FUSB302B_Interrupts {
   FUSB302B_VBUSOK = 0x80,
+  FUSB302B_ACTIVITY = 0x40,
+  FUSB302B_COMP_CHNG = 0x20,
+  FUSB302B_CRC_CHK = 0x20,
 };
 
 /** @private */
@@ -309,6 +312,11 @@ public:
    */
   SinkPortState pollSink();
 
+  // Ah, function pointer syntax.
+  using InterruptHandler = void (*)();
+
+  void setInterruptHandler(InterruptHandler handler);
+
   /** @private While this API is WIP. */
   void enableInterrupts(FUSB302B_Interrupts interrupts);
   /** @private While this API is WIP. */
@@ -329,6 +337,7 @@ private:
 
   Adafruit_I2CDevice *_i2cDev;
   TwoWire *_i2c;
+  InterruptHandler handler = nullptr;
 
   FUSB302B_DeviceId _deviceId;
 

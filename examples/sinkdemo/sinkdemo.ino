@@ -5,7 +5,9 @@ void setup() {
     delay(10);
   }
   Serial.begin(115200);
+}
 
+void loop() {
   Adafruit_FUSB302B usbc;
 
   SinkPortState sinkPort;
@@ -15,7 +17,7 @@ void setup() {
     SinkPortState sinkPort;
     do {
       delay(200);
-      sinkPort = usbc.pollSink(CONNECTION_SINK);
+      sinkPort = usbc.pollSink();
     } while (!sinkPort.isConnected());
 
     const char *currentDesc = "";
@@ -48,7 +50,4 @@ void setup() {
 
     delay(2000);
   }
-}
-
-void loop() {
 }
